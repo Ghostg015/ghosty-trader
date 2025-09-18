@@ -1,0 +1,81 @@
+.trade-box {
+  background: #0d0d0d;
+  padding: 20px;
+  border-radius: 12px;
+  width: 420px;
+  margin: 20px auto;
+  text-align: center;
+  box-shadow: 0px 0px 15px rgba(0, 136, 255, 0.4);
+  font-family: "Consolas", monospace;
+}
+
+.trade-box h2 {
+  color: #00ccff;
+  margin-bottom: 15px;
+  font-size: 20px;
+  text-transform: uppercase;
+}
+
+.trade-box p {
+  color: #bbb;
+  font-size: 14px;
+}
+
+.trade-box label {
+  display: block;
+  margin: 10px 0 5px;
+  color: #ccc;
+  font-size: 13px;
+  text-align: left;
+}
+
+.trade-box input,
+.trade-box select {
+  width: 100%;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid #222;
+  margin-bottom: 10px;
+  font-family: monospace;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 14px;
+  transition: all 0.2s ease-in-out;
+}
+
+.trade-box input:focus,
+.trade-box select:focus {
+  outline: none;
+  border-color: #00ccff;
+  background: #111;
+}
+
+.start-btn,
+.stop-btn {
+  width: 100%;
+  padding: 12px;
+  margin-top: 10px;
+  font-size: 16px;
+  font-weight: bold;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #fff;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.start-btn {
+  background: linear-gradient(90deg, #00ff88, #0088ff);
+  box-shadow: 0px 0px 10px rgba(0, 200, 150, 0.5);
+}
+
+.stop-btn {
+  background: linear-gradient(90deg, #ff0044, #8800ff);
+  box-shadow: 0px 0px 10px rgba(200, 0, 150, 0.5);
+}
+
+.start-btn:hover,
+.stop-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0px 0px 20px rgba(255, 255, 255, 0.2);
+}

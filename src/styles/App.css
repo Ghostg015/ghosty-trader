@@ -1,0 +1,22 @@
+body {
+  background: #0d0d0d;
+  color: #e0e0e0;
+  font-family: 'Roboto Mono', monospace;
+  margin: 0;
+  padding: 0;
+}
+
+button {
+  background: linear-gradient(90deg, #00ff88, #0088ff);
+  border: none;
+  border-radius: 6px;
+  padding: 12px 20px;
+  color: #fff;
+  font-weight: bold;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+button:hover {
+  opacity: 0.85;
+}
