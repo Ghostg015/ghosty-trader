@@ -8,12 +8,12 @@ const TradePanel = ({ ws, balance }) => {
   const [sl, setSl] = useState("");
   const [stake, setStake] = useState("0.35");
   const [running, setRunning] = useState(false);
-  const [startBalance, setStartBalance] = useState(balance);
   const [logs, setLogs] = useState([]);
   const [status, setStatus] = useState("Idle");
 
   const [isTradeActive, setIsTradeActive] = useState(false);
   const [activeSymbol, setActiveSymbol] = useState(null);
+  const [plTracker, setPlTracker] = useState(0); // 🔥 Running P/L tracker
 
   const tickBuffers = useRef({});
   const lastTradeTime = useRef(0);
@@ -140,28 +140,6 @@ const TradePanel = ({ ws, balance }) => {
     const handleMessage = (msg) => {
       const data = JSON.parse(msg.data);
 
-      // 💰 balance check
-      if (data.msg_type === "balance") {
-        const currentBalance = data.balance.balance;
-        if (running) {
-          if (tp && currentBalance >= startBalance + Number(tp)) {
-            updateStatus("✅ Take Profit reached");
-            addLog("✅ Take Profit reached");
-            setRunning(false);
-            setIsTradeActive(false);
-            setActiveSymbol(null);
-            unsubscribeTicks();
-          } else if (sl && currentBalance <= startBalance - Number(sl)) {
-            updateStatus("❌ Stop Loss reached");
-            addLog("❌ Stop Loss reached");
-            setRunning(false);
-            setIsTradeActive(false);
-            setActiveSymbol(null);
-            unsubscribeTicks();
-          }
-        }
-      }
-
       // 📈 ticks
       if (data.msg_type === "tick" && running) {
         const symbol = data.tick.symbol;
@@ -232,13 +210,33 @@ const TradePanel = ({ ws, balance }) => {
       // 📉 contract result
       if (data.msg_type === "proposal_open_contract") {
         if (data.proposal_open_contract.is_sold) {
-          const result =
-            data.proposal_open_contract.profit > 0 ? "✅ Won" : "❌ Lost";
+          const profit = data.proposal_open_contract.profit;
+          const result = profit > 0 ? "✅ Won" : "❌ Lost";
+
           addLog(
-            `📉 Contract closed: ${result}, Profit: $${data.proposal_open_contract.profit}`
+            `📉 Contract closed: ${result}, Profit: $${profit.toFixed(2)}`
           );
           updateStatus(`📉 Last result: ${result}`);
           setIsTradeActive(false);
+
+          // 🔥 Update running P/L
+          setPlTracker((prev) => {
+            const newPl = prev + profit;
+            if (tp && newPl >= Number(tp)) {
+              updateStatus("✅ Take Profit reached");
+              addLog("✅ Take Profit reached, stopping bot");
+              setRunning(false);
+              setActiveSymbol(null);
+              unsubscribeTicks();
+            } else if (sl && newPl <= -Number(sl)) {
+              updateStatus("❌ Stop Loss reached");
+              addLog("❌ Stop Loss reached, stopping bot");
+              setRunning(false);
+              setActiveSymbol(null);
+              unsubscribeTicks();
+            }
+            return newPl;
+          });
         }
       }
     };
@@ -253,7 +251,6 @@ const TradePanel = ({ ws, balance }) => {
     running,
     tp,
     sl,
-    startBalance,
     placeTrade,
     unsubscribeTicks,
     addLog,
@@ -269,7 +266,7 @@ const TradePanel = ({ ws, balance }) => {
       alert("Enter both Take Profit and Stop Loss!");
       return;
     }
-    setStartBalance(balance);
+    setPlTracker(0); // reset P/L at start
     setRunning(true);
     setStatus("Analyzing...");
     addLog("Bot started ✅");
@@ -289,6 +286,7 @@ const TradePanel = ({ ws, balance }) => {
     <div className="trade-box">
       <h2>⚡ Trading Panel</h2>
       <p>Balance: ${balance}</p>
+      <p>P/L Tracker: ${plTracker.toFixed(2)}</p>
 
       <label>Choose Volatility:</label>
       <select
