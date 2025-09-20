@@ -7,61 +7,51 @@ const Connection = ({ onConnect }) => {
   const [balance, setBalance] = useState(null);
 
   const wsRef = useRef(null);
-  const pingIntervalRef = useRef(null);
+  const pingInterval = useRef(null);
 
-  const startPing = () => {
-    if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-
-    // Send ping every 30s
-    pingIntervalRef.current = setInterval(() => {
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ ping: 1 }));
+  const startPing = (ws) => {
+    if (pingInterval.current) clearInterval(pingInterval.current);
+    pingInterval.current = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ ping: 1 }));
       }
     }, 30000);
   };
 
-  const stopPing = () => {
-    if (pingIntervalRef.current) {
-      clearInterval(pingIntervalRef.current);
-      pingIntervalRef.current = null;
-    }
-  };
+  const connectAccount = (token) => {
+    if (!token) return;
 
-  const connectWS = () => {
     const ws = new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
     wsRef.current = ws;
 
     ws.onopen = () => {
-      setStatus("Authorizing...");
-      ws.send(JSON.stringify({ authorize: apiToken }));
-      startPing();
+      ws.send(JSON.stringify({ authorize: token }));
+      startPing(ws);
     };
 
     ws.onmessage = (msg) => {
       const data = JSON.parse(msg.data);
 
       if (data.error) {
-        setStatus("Error: " + data.error.message);
+        setStatus(`Error: ${data.error.message}`);
         console.error("Deriv Error:", data.error);
       }
 
       if (data.msg_type === "authorize") {
-        setStatus("Connected ✅");
-        ws.send(JSON.stringify({ balance: 1 })); // request balance
+        ws.send(JSON.stringify({ balance: 1, subscribe: 1 }));
       }
 
       if (data.msg_type === "balance" && data.balance) {
         setBalance(data.balance.balance);
+        setStatus("Connected ✅");
         onConnect(ws, data.balance.balance);
       }
     };
 
     ws.onclose = () => {
-      setStatus("Disconnected ❌ (reconnecting...)");
-      stopPing();
-      // Auto-reconnect after 3s
+      setStatus("Disconnected ❌ (auto-reconnect in 3s)");
       setTimeout(() => {
-        if (apiToken) connectWS();
+        if (token) connectAccount(token);
       }, 3000);
     };
 
@@ -73,21 +63,24 @@ const Connection = ({ onConnect }) => {
 
   const handleConnect = () => {
     if (!apiToken) {
-      alert("Please enter your API token");
+      alert("API Token is required");
       return;
     }
-    connectWS();
+    setStatus("Connecting...");
+    connectAccount(apiToken);
   };
 
   return (
     <div className="connection-box">
       <h2>🔗 Connect to Deriv</h2>
+
       <input
         type="password"
-        placeholder="Enter your API Token"
+        placeholder="Enter API Token"
         value={apiToken}
         onChange={(e) => setApiToken(e.target.value)}
       />
+
       <button onClick={handleConnect}>Connect</button>
 
       <div className="status">

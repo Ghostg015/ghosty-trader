@@ -15,7 +15,10 @@ function App() {
   return (
     <div className="App">
       <h1>👻 Ghosty Trader</h1>
+
+      {/* Connect to Deriv */}
       <Connection onConnect={handleConnect} />
+
       {ws && <TradePanel ws={ws} balance={balance} />}
     </div>
   );

@@ -13,12 +13,13 @@ const TradePanel = ({ ws, balance }) => {
 
   const [isTradeActive, setIsTradeActive] = useState(false);
   const [activeSymbol, setActiveSymbol] = useState(null);
-  const [plTracker, setPlTracker] = useState(0); // 🔥 Running P/L tracker
+  const [plTracker, setPlTracker] = useState(0);
 
   const tickBuffers = useRef({});
   const lastTradeTime = useRef(0);
+  const signalConfirm = useRef({});
 
-  const COOLDOWN_MS = 2500; // ~2–3 ticks
+  const COOLDOWN_MS = 2500;
 
   const addLog = useCallback(
     (msg) =>
@@ -42,7 +43,22 @@ const TradePanel = ({ ws, balance }) => {
     return counts.map((c) => (c / history.length) * 100);
   }, []);
 
-  // 🔑 trade executor
+  const confirmSignal = (symbol, type) => {
+    if (!signalConfirm.current[symbol]) {
+      signalConfirm.current[symbol] = { lastType: type, count: 1 };
+      return false;
+    }
+    const s = signalConfirm.current[symbol];
+    if (s.lastType === type) {
+      s.count += 1;
+    } else {
+      s.lastType = type;
+      s.count = 1;
+    }
+    return s.count >= 2;
+  };
+
+  // 🔑 Trade executor
   const placeTrade = useCallback(
     (symbol, contract_type, barrier) => {
       const now = Date.now();
@@ -110,18 +126,24 @@ const TradePanel = ({ ws, balance }) => {
   const unsubscribeTicks = useCallback(() => {
     ws.send(JSON.stringify({ forget_all: "ticks" }));
     tickBuffers.current = {};
+    signalConfirm.current = {};
   }, [ws]);
 
-  // 🔍 pick next symbol with signal
   const findNextSymbolWithSignal = useCallback(() => {
     for (const symbol in tickBuffers.current) {
       if (tickBuffers.current[symbol].length >= 10) {
         const probs = analyzeDigits(tickBuffers.current[symbol]);
-        if (probs[0] < 10 && probs[1] < 10) {
-          return { symbol, contract_type: "DIGITOVER", barrier: 1 };
+        const maxProb = Math.max(...probs);
+
+        if (probs[0] < 10 && probs[1] < 10 && maxProb >= 18) {
+          if (confirmSignal(symbol, "DIGITOVER")) {
+            return { symbol, contract_type: "DIGITOVER", barrier: 1 };
+          }
         }
-        if (probs[8] < 10 && probs[9] < 10) {
-          return { symbol, contract_type: "DIGITUNDER", barrier: 8 };
+        if (probs[8] < 10 && probs[9] < 10 && maxProb >= 18) {
+          if (confirmSignal(symbol, "DIGITUNDER")) {
+            return { symbol, contract_type: "DIGITUNDER", barrier: 8 };
+          }
         }
       }
     }
@@ -152,13 +174,23 @@ const TradePanel = ({ ws, balance }) => {
 
         if (tickBuffers.current[symbol].length >= 10) {
           const probs = analyzeDigits(tickBuffers.current[symbol]);
+          const maxProb = Math.max(...probs);
 
-          // still locked
           if (activeSymbol === symbol) {
             if (!isTradeActive) {
-              if (probs[0] < 10 && probs[1] < 10) {
+              if (
+                probs[0] < 10 &&
+                probs[1] < 10 &&
+                maxProb >= 18 &&
+                confirmSignal(symbol, "DIGITOVER")
+              ) {
                 placeTrade(symbol, "DIGITOVER", 1);
-              } else if (probs[8] < 10 && probs[9] < 10) {
+              } else if (
+                probs[8] < 10 &&
+                probs[9] < 10 &&
+                maxProb >= 18 &&
+                confirmSignal(symbol, "DIGITUNDER")
+              ) {
                 placeTrade(symbol, "DIGITUNDER", 8);
               } else {
                 addLog(`🔓 Unlocking ${activeSymbol}, condition gone`);
@@ -168,7 +200,6 @@ const TradePanel = ({ ws, balance }) => {
             }
           }
 
-          // not locked → try to find next valid symbol
           if (!activeSymbol && !isTradeActive) {
             const candidate = findNextSymbolWithSignal();
             if (candidate) {
@@ -210,7 +241,7 @@ const TradePanel = ({ ws, balance }) => {
       // 📉 contract result
       if (data.msg_type === "proposal_open_contract") {
         if (data.proposal_open_contract.is_sold) {
-          const profit = data.proposal_open_contract.profit;
+          const profit = data.proposal_open_contract.profit || 0;
           const result = profit > 0 ? "✅ Won" : "❌ Lost";
 
           addLog(
@@ -219,7 +250,6 @@ const TradePanel = ({ ws, balance }) => {
           updateStatus(`📉 Last result: ${result}`);
           setIsTradeActive(false);
 
-          // 🔥 Update running P/L
           setPlTracker((prev) => {
             const newPl = prev + profit;
             if (tp && newPl >= Number(tp)) {
@@ -266,7 +296,7 @@ const TradePanel = ({ ws, balance }) => {
       alert("Enter both Take Profit and Stop Loss!");
       return;
     }
-    setPlTracker(0); // reset P/L at start
+    setPlTracker(0);
     setRunning(true);
     setStatus("Analyzing...");
     addLog("Bot started ✅");
@@ -285,8 +315,21 @@ const TradePanel = ({ ws, balance }) => {
   return (
     <div className="trade-box">
       <h2>⚡ Trading Panel</h2>
-      <p>Balance: ${balance}</p>
-      <p>P/L Tracker: ${plTracker.toFixed(2)}</p>
+
+      {/* Balances display */}
+      <p>
+        Balance:{" "}
+        {balance !== null && balance !== undefined
+          ? `$${Number(balance).toFixed(2)}`
+          : "Loading..."}
+      </p>
+
+      <p>
+        P/L Tracker: $
+        {plTracker !== null && plTracker !== undefined
+          ? plTracker.toFixed(2)
+          : "0.00"}
+      </p>
 
       <label>Choose Volatility:</label>
       <select
