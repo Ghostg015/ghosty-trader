@@ -21,6 +21,8 @@ const TradePanel = ({ ws, balance }) => {
 
   const COOLDOWN_MS = 2500;
 
+  const randomPick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
   const addLog = useCallback(
     (msg) =>
       setLogs((prev) => [
@@ -30,9 +32,7 @@ const TradePanel = ({ ws, balance }) => {
     []
   );
 
-  const updateStatus = useCallback((msg) => {
-    setStatus(msg);
-  }, []);
+  const updateStatus = useCallback((msg) => setStatus(msg), []);
 
   const analyzeDigits = useCallback((history) => {
     let counts = Array(10).fill(0);
@@ -44,21 +44,12 @@ const TradePanel = ({ ws, balance }) => {
   }, []);
 
   const confirmSignal = (symbol, type) => {
-    if (!signalConfirm.current[symbol]) {
-      signalConfirm.current[symbol] = { lastType: type, count: 1 };
-      return false;
-    }
+    if (!signalConfirm.current[symbol]) signalConfirm.current[symbol] = {};
     const s = signalConfirm.current[symbol];
-    if (s.lastType === type) {
-      s.count += 1;
-    } else {
-      s.lastType = type;
-      s.count = 1;
-    }
-    return s.count >= 2;
+    s[type] = (s[type] || 0) + 1;
+    return s[type] >= 2;
   };
 
-  // 🔑 Trade executor
   const placeTrade = useCallback(
     (symbol, contract_type, barrier) => {
       const now = Date.now();
@@ -70,12 +61,10 @@ const TradePanel = ({ ws, balance }) => {
         addLog("⚠️ Waiting for previous trade to finish...");
         return;
       }
-
       addLog(
         `🚀 Placing ${contract_type} on ${symbol} (barrier ${barrier}, stake $${stake})`
       );
       updateStatus(`🚀 Trading ${contract_type} on ${symbol} (barrier ${barrier})`);
-
       setIsTradeActive(true);
       lastTradeTime.current = now;
 
@@ -93,13 +82,11 @@ const TradePanel = ({ ws, balance }) => {
           barrier: barrier.toString(),
         },
       };
-
       ws.send(JSON.stringify(tradeRequest));
     },
     [ws, stake, isTradeActive, addLog, updateStatus]
   );
 
-  // 🔄 subscribe ticks
   const subscribeTicks = useCallback(() => {
     let indices =
       volatility === "all"
@@ -116,7 +103,6 @@ const TradePanel = ({ ws, balance }) => {
             "1HZ100V",
           ]
         : [volatility];
-
     indices.forEach((symbol) => {
       tickBuffers.current[symbol] = [];
       ws.send(JSON.stringify({ ticks: symbol, subscribe: 1 }));
@@ -129,21 +115,34 @@ const TradePanel = ({ ws, balance }) => {
     signalConfirm.current = {};
   }, [ws]);
 
+  const getLeastDigit = (probs) => {
+    const min = Math.min(...probs);
+    return probs.indexOf(min);
+  };
+
   const findNextSymbolWithSignal = useCallback(() => {
     for (const symbol in tickBuffers.current) {
       if (tickBuffers.current[symbol].length >= 10) {
         const probs = analyzeDigits(tickBuffers.current[symbol]);
         const maxProb = Math.max(...probs);
 
-        if (probs[0] < 10 && probs[1] < 10 && maxProb >= 18) {
-          if (confirmSignal(symbol, "DIGITOVER")) {
-            return { symbol, contract_type: "DIGITOVER", barrier: 1 };
-          }
+        // Over
+        if (maxProb >= 15 && (probs[0] < 10 || probs[1] < 10 || probs[2] < 10)) {
+          const barrier = randomPick([0, 1, 2]);
+          if (confirmSignal(symbol, `DIGITOVER${barrier}`))
+            return { symbol, contract_type: "DIGITOVER", barrier };
         }
-        if (probs[8] < 10 && probs[9] < 10 && maxProb >= 18) {
-          if (confirmSignal(symbol, "DIGITUNDER")) {
-            return { symbol, contract_type: "DIGITUNDER", barrier: 8 };
-          }
+        // Under
+        if (maxProb >= 15 && (probs[7] < 10 || probs[8] < 10 || probs[9] < 10)) {
+          const barrier = randomPick([7, 8, 9]);
+          if (confirmSignal(symbol, `DIGITUNDER${barrier}`))
+            return { symbol, contract_type: "DIGITUNDER", barrier };
+        }
+        // Differs
+        const least = getLeastDigit(probs);
+        if (probs[least] < 10) {
+          if (confirmSignal(symbol, `DIGITDIFF${least}`))
+            return { symbol, contract_type: "DIGITDIFF", barrier: least };
         }
       }
     }
@@ -152,21 +151,15 @@ const TradePanel = ({ ws, balance }) => {
 
   useEffect(() => {
     if (!ws) return;
-
     const pingInterval = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ ping: 1 }));
-      }
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ ping: 1 }));
     }, 30000);
 
     const handleMessage = (msg) => {
       const data = JSON.parse(msg.data);
-
-      // 📈 ticks
       if (data.msg_type === "tick" && running) {
         const symbol = data.tick.symbol;
         const price = data.tick.quote;
-
         if (!tickBuffers.current[symbol]) tickBuffers.current[symbol] = [];
         tickBuffers.current[symbol].push(price);
         if (tickBuffers.current[symbol].length > 20)
@@ -176,23 +169,26 @@ const TradePanel = ({ ws, balance }) => {
           const probs = analyzeDigits(tickBuffers.current[symbol]);
           const maxProb = Math.max(...probs);
 
-          if (activeSymbol === symbol) {
-            if (!isTradeActive) {
-              if (
-                probs[0] < 10 &&
-                probs[1] < 10 &&
-                maxProb >= 18 &&
-                confirmSignal(symbol, "DIGITOVER")
-              ) {
-                placeTrade(symbol, "DIGITOVER", 1);
-              } else if (
-                probs[8] < 10 &&
-                probs[9] < 10 &&
-                maxProb >= 18 &&
-                confirmSignal(symbol, "DIGITUNDER")
-              ) {
-                placeTrade(symbol, "DIGITUNDER", 8);
-              } else {
+          if (activeSymbol === symbol && !isTradeActive) {
+            if (
+              maxProb >= 15 &&
+              (probs[0] < 10 || probs[1] < 10 || probs[2] < 10)
+            ) {
+              const barrier = randomPick([0, 1, 2]);
+              if (confirmSignal(symbol, `DIGITOVER${barrier}`))
+                placeTrade(symbol, "DIGITOVER", barrier);
+            } else if (
+              maxProb >= 15 &&
+              (probs[7] < 10 || probs[8] < 10 || probs[9] < 10)
+            ) {
+              const barrier = randomPick([7, 8, 9]);
+              if (confirmSignal(symbol, `DIGITUNDER${barrier}`))
+                placeTrade(symbol, "DIGITUNDER", barrier);
+            } else {
+              const least = getLeastDigit(probs);
+              if (probs[least] < 10 && confirmSignal(symbol, `DIGITDIFF${least}`))
+                placeTrade(symbol, "DIGITDIFF", least);
+              else {
                 addLog(`🔓 Unlocking ${activeSymbol}, condition gone`);
                 updateStatus(`🔓 Unlocked ${activeSymbol}`);
                 setActiveSymbol(null);
@@ -207,20 +203,13 @@ const TradePanel = ({ ws, balance }) => {
               updateStatus(
                 `🔒 Locked on ${candidate.symbol} (${candidate.contract_type})`
               );
-              addLog(
-                `Locked on ${candidate.symbol} for ${candidate.contract_type}`
-              );
-              placeTrade(
-                candidate.symbol,
-                candidate.contract_type,
-                candidate.barrier
-              );
+              addLog(`Locked on ${candidate.symbol} for ${candidate.contract_type}`);
+              placeTrade(candidate.symbol, candidate.contract_type, candidate.barrier);
             }
           }
         }
       }
 
-      // 📜 trade confirm
       if (data.msg_type === "buy") {
         if (data.buy && data.buy.contract_id) {
           addLog(`📑 Trade placed → ID: ${data.buy.contract_id}`);
@@ -238,15 +227,11 @@ const TradePanel = ({ ws, balance }) => {
         }
       }
 
-      // 📉 contract result
       if (data.msg_type === "proposal_open_contract") {
         if (data.proposal_open_contract.is_sold) {
           const profit = data.proposal_open_contract.profit || 0;
           const result = profit > 0 ? "✅ Won" : "❌ Lost";
-
-          addLog(
-            `📉 Contract closed: ${result}, Profit: $${profit.toFixed(2)}`
-          );
+          addLog(`📉 Contract closed: ${result}, Profit: $${profit.toFixed(2)}`);
           updateStatus(`📉 Last result: ${result}`);
           setIsTradeActive(false);
 
@@ -314,16 +299,20 @@ const TradePanel = ({ ws, balance }) => {
 
   return (
     <div className="trade-box">
-      <h2>⚡ Trading Panel</h2>
+      {/* Strict warning banner */}
+      <div className="warning-box">
+        ⚠️ <strong>Risk Warning:</strong> This bot makes automated trades on your
+        Deriv account using your API token. Trading involves financial risk.
+        Test with a demo account first. You are responsible for all results.
+      </div>
 
-      {/* Balances display */}
+      <h2>⚡ Trading Panel</h2>
       <p>
         Balance:{" "}
         {balance !== null && balance !== undefined
           ? `$${Number(balance).toFixed(2)}`
           : "Loading..."}
       </p>
-
       <p>
         P/L Tracker: $
         {plTracker !== null && plTracker !== undefined
