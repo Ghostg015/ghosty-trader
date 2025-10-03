@@ -50,34 +50,57 @@
   background: #111;
 }
 
-.start-btn,
-.stop-btn {
+/* Trade Button */
+.trade-buttons {
+  margin-top: 10px;
+}
+
+.bot-btn {
   width: 100%;
   padding: 12px;
-  margin-top: 10px;
   font-size: 16px;
   font-weight: bold;
   border: none;
   border-radius: 8px;
   cursor: pointer;
   color: #fff;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: all 0.2s ease-in-out;
 }
 
-.start-btn {
+/* Start Bot style */
+.bot-btn.start {
   background: linear-gradient(90deg, #00ff88, #0088ff);
   box-shadow: 0px 0px 10px rgba(0, 200, 150, 0.5);
 }
 
-.stop-btn {
-  background: linear-gradient(90deg, #ff0044, #8800ff);
-  box-shadow: 0px 0px 10px rgba(200, 0, 150, 0.5);
+.bot-btn.start:hover {
+  transform: scale(1.05);
+  box-shadow: 0px 0px 20px rgba(0, 200, 150, 0.4);
 }
 
-.start-btn:hover,
-.stop-btn:hover {
+/* Stop Bot style */
+.bot-btn.stop {
+  background: linear-gradient(90deg, #ff0044, #8800ff);
+  box-shadow: 0px 0px 10px rgba(200, 0, 150, 0.5);
+  animation: pulseRed 1s infinite;
+}
+
+.bot-btn.stop:hover {
   transform: scale(1.05);
-  box-shadow: 0px 0px 20px rgba(255, 255, 255, 0.2);
+  box-shadow: 0px 0px 20px rgba(255, 0, 0, 0.6);
+}
+
+/* Pulse animation for running bot */
+@keyframes pulseRed {
+  0% {
+    box-shadow: 0 0 10px rgba(200, 0, 150, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(255, 0, 0, 0.8);
+  }
+  100% {
+    box-shadow: 0 0 10px rgba(200, 0, 150, 0.5);
+  }
 }
 
 .warning-box {
